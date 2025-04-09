@@ -1,8 +1,26 @@
+from flask import Flask
+import threading
 import telebot
 from telebot import types
 import requests
 import random
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# 👇 Create Flask app
+app = Flask(__name__)
+
+# 👇 Define a simple route to show the bot is running
+@app.route('/')
+def home():
+    return "Bujji Weather Bot is running! ☁️☀️🌧️"
+
+# 👇 Function to run the Flask server on a free port (Render needs this)
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
+
+# 👇 Start the Flask server in a new thread (non-blocking)
+threading.Thread(target=run_flask).start()
+
 
 BOT_TOKEN = "7407002704:AAEak_ultW_1f-uAApwjlUwn-10L6J5dSoo"
 API_KEY = "cfe48a7245126131a4ac309b754d03fa"
@@ -284,4 +302,4 @@ def callback_handler(call):
 # Run the bot
 if __name__ == "__main__":
     print("🤖 Bujji Weather Bot is running...")
-    bot.polling()
+    bot.infinity_polling()
