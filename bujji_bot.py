@@ -282,5 +282,6 @@ def callback_handler(call):
             bot.send_message(call.message.chat.id, "Couldn't fetch forecast data.")
 
 # Run the bot
-print("🤖 Bujji Weather Bot is running...")
-bot.polling()
+if __name__ == "__main__":
+    print("🤖 Bujji Weather Bot is running...")
+    bot.polling()
