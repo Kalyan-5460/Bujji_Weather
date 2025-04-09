@@ -19,7 +19,7 @@ def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
 # 👇 Start the Flask server in a new thread (non-blocking)
-threading.Thread(target=run_flask).start()
+#threading.Thread(target=run_flask).start()
 
 BOT_TOKEN = "7407002704:AAEak_ultW_1f-uAApwjlUwn-10L6J5dSoo"
 API_KEY = "cfe48a7245126131a4ac309b754d03fa"
@@ -258,7 +258,8 @@ def callback_handler(call):
         else:
             bot.send_message(call.message.chat.id, "Couldn't fetch forecast data.")
 
-WEBHOOK_URL = "https://your-render-or-railway-url.com/webhook"
+WEBHOOK_URL = "https://bujji-weather.onrender.com/webhook"
+
 
 # Webhook route to receive updates from Telegram
 @app.route('/webhook', methods=['POST'])
@@ -275,12 +276,11 @@ def webhook():
 if __name__ == "__main__":
     print("🤖 Setting webhook and running Bujji Weather Bot...")
 
-    # Remove previous webhook (optional)
+    # Remove old webhook and set new one
     bot.remove_webhook()
-    
-    # Set new webhook to your hosted URL + /webhook endpoint
     bot.set_webhook(url=WEBHOOK_URL)
 
-    # Run Flask app (on port 10000 for Render compatibility)
-    app.run(host="0.0.0.0", port=10000)
+    # Run Flask server on Render-compatible port
+    app.run(host="0.0.0.0", port=10000, use_reloader=False)
+
 
