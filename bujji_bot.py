@@ -266,7 +266,20 @@ def run_bot():
     bot.infinity_polling()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
+    import time
+
+    # Set your public URL where Flask app is hosted (e.g., Render)
+    WEBHOOK_URL = f"https://bujji-weather.onrender.com/{BOT_TOKEN}"  # Change this to your actual domain + token
+
+    # Remove any existing webhook
+    bot.remove_webhook()
+    time.sleep(1)  # small delay to ensure removal
+
+    # Set webhook to the correct public URL
+    bot.set_webhook(url=WEBHOOK_URL)
+
+    # Run the Flask app
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
