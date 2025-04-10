@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 @app.route("/", methods=["GET", "HEAD"])
 def index():
-    return Response("Welcome to Bujji Weather Bot! 🌤️", content_type="text/plain; charset=utf-8")
+    return Response("✅ Bujji Weather Bot is running fine! 🌦️", content_type="text/plain; charset=utf-8")
 
 
 # Load environment variables
