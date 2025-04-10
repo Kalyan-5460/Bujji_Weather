@@ -54,9 +54,21 @@ AQI_LEVELS = {
 }
 
 CITY_MAPPING = {
-    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam",
-    # ... (keep your existing city mappings)
+    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
+    "mvp colony": "Visakhapatnam", "madhurawada": "Visakhapatnam", "rajahmundry": "Rajahmundry",
+    "kakinada": "Kakinada", "vizianagaram": "Vizianagaram", "tirupati": "Tirupati",
+    "guntur": "Guntur", "vijayawada": "Vijayawada", "tenali": "Guntur", "ongole": "Ongole",
+    "nellore": "Nellore", "sriharikota": "Nellore", "srikakulam": "Srikakulam", "eluru": "Eluru",
+    "machilipatnam": "Machilipatnam", "tadepalligudem": "Tadepalligudem", "narasaraopet": "Guntur",
+    "kadapa": "Kadapa", "ananthapur": "Anantapur", "chittoor": "Chittoor",
+    "madhapur": "Hyderabad", "gachibowli": "Hyderabad", "ameerpet": "Hyderabad",
+    "kukatpally": "Hyderabad", "uppal": "Hyderabad", "secunderabad": "Hyderabad",
+    "lb nagar": "Hyderabad", "bhel": "Hyderabad", "warangal": "Warangal",
+    "karimnagar": "Karimnagar", "khammam": "Khammam", "nizamabad": "Nizamabad",
+    "siddipet": "Siddipet", "nalgonda": "Nalgonda", "zaheerabad": "Zaheerabad",
+    "mahabubnagar": "Mahbubnagar"
 }
+
 
 # Utility functions
 def validate_city(city):
@@ -143,7 +155,7 @@ def send_about(message):
         "🔹 24-hour forecasts\n"
         "🔹 Location-based weather\n"
         "🔹 Fun weather tips\n\n"
-        "✨ Created with ❤️ by [Your Name]\n"
+        "✨ Created with ❤️ by MKV Vinay\n"
         "🌐 Hosted on Render"
     )
     bot.reply_to(message, about_text, parse_mode="Markdown")
