@@ -27,7 +27,11 @@ app = Flask(__name__)
 # Configure caching
 cache = Cache(config={'CACHE_TYPE': 'SimpleCache'})
 cache.init_app(app)
-
+# Adding this temporary route to verify webhook is receiving messages
+@app.route('/webhook_log', methods=['POST'])
+def webhook_log():
+    print("Received update:", request.json)  # Check Render logs for this output
+    return 'OK'
 # Configure rate limiting
 limiter = Limiter(
     app=app,
@@ -130,6 +134,26 @@ def format_weather_response(data, city):
     )
 
 # Bot command handlers
+@bot.message_handler(content_types=['text'])
+def handle_city_request(message):
+    print(f"Received text: {message.text}")  # Check logs for this
+    user_input = message.text.strip().lower()
+    print(f"Processed input: {user_input}")  # Verify city name processing
+    
+    if not validate_city(user_input):
+        return bot.reply_to(message, "⚠️ Invalid city name format. Please try again.")
+        
+    city = CITY_MAPPING.get(user_input, user_input)
+    print(f"Looking up city: {city}")  # Debug which city is being searched
+    
+    weather_data = get_weather_data(city)
+    if not weather_data:
+        return bot.reply_to(message, "⚠️ City not found. Please check the spelling.")
+        
+    formatted_weather = format_weather_response(weather_data, city)
+    markup = create_weather_markup(city)
+    bot.reply_to(message, formatted_weather, reply_markup=markup)
+    
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     """Handle /start command"""
