@@ -12,11 +12,8 @@ from flask_caching import Cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import smtplib
-# At the top of your file:
 import multiprocessing
-# Add this import at the top
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-
 
 # Validate environment variables
 required_vars = ["BOT_TOKEN", "SENDER_EMAIL", "APP_PASSWORD", "API_KEY", "RECEIVER_EMAIL"]
@@ -79,7 +76,6 @@ CITY_MAPPING = {
     "siddipet": "Siddipet", "nalgonda": "Nalgonda", "zaheerabad": "Zaheerabad",
     "mahabubnagar": "Mahbubnagar"
 }
-
 
 # Utility functions
 def validate_city(city):
@@ -155,11 +151,13 @@ def send_help(message):
         "📝 Send feedback using /feedback"
     )
     bot.reply_to(message, help_text)
-# Add this handler somewhere with your other handlers
-       if call.data.startswith('aqi:'):
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback_query(call):
+    try:
+        if call.data.startswith('aqi:'):
             city = call.data.split(':')[1]
-            # Implement actual AQI lookup
-            aqi_data = get_aqi_data(city)  # You'll need to implement this function
+            aqi_data = get_aqi_data(city)
             if aqi_data:
                 bot.send_message(call.message.chat.id, f"💨 Air Quality in {city}:\n{AQI_LEVELS.get(aqi_data, 'Unknown')}")
             else:
@@ -167,8 +165,7 @@ def send_help(message):
                 
         elif call.data.startswith('forecast:'):
             city = call.data.split(':')[1]
-            # Implement actual forecast lookup
-            forecast_data = get_forecast_data(city)  # You'll need to implement this function
+            forecast_data = get_forecast_data(city)
             if forecast_data:
                 bot.send_message(call.message.chat.id, f"⏱️ 24h Forecast for {city}:\n{forecast_data}")
             else:
@@ -177,6 +174,16 @@ def send_help(message):
     except Exception as e:
         logging.error(f"Callback query error: {str(e)}")
         bot.answer_callback_query(call.id, "⚠️ Error processing request")
+
+def get_aqi_data(city):
+    """Implement actual AQI lookup logic"""
+    # Placeholder - implement with your AQI API
+    return None
+
+def get_forecast_data(city):
+    """Implement actual forecast lookup logic"""
+    # Placeholder - implement with your forecast API
+    return None
 
 # Change the webhook route to use a more secure path
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-path")
@@ -237,7 +244,7 @@ def send_email_feedback(user, text):
         smtp.login(SENDER_EMAIL, APP_PASSWORD)
         smtp.send_message(msg)
     logging.info(f"Feedback email sent for user {user.id}")
-# Weather data handlers
+
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
     """Handle location messages"""
@@ -267,7 +274,6 @@ def handle_city_request(message):
     markup = create_weather_markup(city)
     bot.reply_to(message, formatted_weather, reply_markup=markup)
 
-# Helper functions
 def create_weather_markup(city):
     """Create inline keyboard for weather options"""
     markup = InlineKeyboardMarkup()
