@@ -7,6 +7,42 @@ import random
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import smtplib
 from email.mime.text import MIMEText
+# Feedback handler
+from telebot import types
+
+@bot.message_handler(commands=['feedback'])
+def ask_feedback(message):
+    msg = bot.send_message(message.chat.id, "📝 Please type your feedback below:")
+    bot.register_next_step_handler(msg, process_feedback)
+
+def process_feedback(message):
+    user_feedback = message.text
+    user = message.from_user
+    feedback_message = f"Feedback from @{user.username or user.first_name}:\n\n{user_feedback}"
+
+    # Send the feedback via email
+    send_feedback_email(feedback_message)
+
+    bot.send_message(message.chat.id, "🙏 Thanks Bujji! Your feedback has been sent successfully.")
+
+def send_feedback_email(feedback_message):
+    import smtplib
+    from email.message import EmailMessage
+    import os
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+    TO_EMAIL = os.environ.get("TO_EMAIL")
+
+    msg = EmailMessage()
+    msg.set_content(feedback_message)
+    msg['Subject'] = '🛎️ New Feedback from Bujji Weather Bot'
+    msg['From'] = EMAIL_USER
+    msg['To'] = TO_EMAIL
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(EMAIL_USER, EMAIL_PASSWORD)
+        smtp.send_message(msg)
 
 # 👉 Flask app
 app = Flask(__name__)
