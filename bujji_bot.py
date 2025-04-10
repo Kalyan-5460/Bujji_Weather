@@ -1,4 +1,5 @@
 from flask import Flask, request
+from flask import Response
 import threading
 import telebot
 from telebot import types
@@ -11,8 +12,11 @@ from email.message import EmailMessage
 import os
 import logging
 
-logging.basicConfig(level=logging.INFO)
+app = Flask(__name__)
 
+@app.route("/", methods=["GET", "HEAD"])
+def index():
+    return Response("Welcome to Bujji Weather Bot! 🌤️", content_type="text/plain; charset=utf-8")
 
 
 # Load environment variables
@@ -21,7 +25,6 @@ SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
-app = Flask(__name__)
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Funny tips generator
@@ -164,12 +167,12 @@ def send_email_feedback(user, text):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(SENDER_EMAIL, APP_PASSWORD)
             smtp.send_message(msg)
-            # Then inside your functions:
         logging.info("Feedback sent from user: %s", user.username)
 
             
     except Exception as e:
-        print("Email sending failed:", e)
+        logging.error("Email sending failed: %s", e)
+
     
 # Location handler
 @bot.message_handler(content_types=['location'])
@@ -237,10 +240,10 @@ def webhook():
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
-
-@app.route('/')
-def index():
-    return "Bujji Weather Bot is running! \u2600\ufe0f\u2601\ufe0f\ud83c\udf27\ufe0f"
+@app.errorhandler(Exception)
+def handle_error(e):
+    logging.error("Unhandled exception: %s", e)
+    return "Something went wrong.", 500
 @bot.message_handler(commands=['about'])
 def about_cmd(message):
     bot.send_message(message.chat.id, (
@@ -257,10 +260,9 @@ def about_cmd(message):
         "_Type /help to see what I can do!_"
     ), parse_mode="Markdown")
     
-    
+bot.remove_webhook()
+bot.set_webhook(url=f"https://bujji-weather.onrender.com/{BOT_TOKEN}")
 
-# Uncomment this when running locally (not on Render)
-# def run_bot():
-#     bot.polling()
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
-# threading.Thread(target=run_bot).start()
