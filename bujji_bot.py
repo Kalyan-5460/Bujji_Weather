@@ -13,6 +13,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import smtplib
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from datetime import timedelta
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -42,6 +43,10 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
 
+
+# User activity tracking
+user_last_activity = {}
+INACTIVITY_LIMIT = timedelta(days=1)  # 24 hours
 # Initialize Telegram bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -80,7 +85,17 @@ CITY_MAPPING = {
 # Utility functions
 def validate_city(city):
     return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
-
+def check_user_activity(user_id):
+    """Check if user is active or needs to see start message"""
+    now = datetime.now()
+    last_active = user_last_activity.get(user_id)
+    
+    # If new user or inactive for >24h
+    if last_active is None or (now - last_active) > INACTIVITY_LIMIT:
+        user_last_activity[user_id] = now
+        return False  # Needs to see start message
+    user_last_activity[user_id] = now
+    return True  # Is active user
 def get_funny_tip(temp_c):
     if temp_c > 35: return "🥵 It's boiling! Stay hydrated!"
     elif temp_c > 28: return "😎 Perfect for shades and chilled drinks"
@@ -195,6 +210,7 @@ def send_feedback_email(user, message_text):
 # Bot handlers
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     welcome_msg = (
         f"Hi {message.from_user.first_name}! 🌤️ I'm Bujji Weather Bot\n\n"
         "Just send me:\n"
@@ -209,6 +225,7 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['about'])
 def send_about(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     about_text = (
         "🌦️ *Bujji Weather Bot*\n\n"
         "Your personal weather assistant with:\n"
@@ -223,10 +240,12 @@ def send_about(message):
 
 @bot.message_handler(commands=['feedback'])
 def request_feedback(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     msg = bot.reply_to(message, "📝 Please type your feedback or suggestions:")
     bot.register_next_step_handler(msg, process_feedback)
 
 def process_feedback(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     try:
         if send_feedback_email(message.from_user, message.text):
             bot.reply_to(message, "📩 Thanks! Your feedback has been sent.")
@@ -238,6 +257,7 @@ def process_feedback(message):
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     user_input = message.text.strip()
     
     if not validate_city(user_input):
@@ -262,6 +282,7 @@ def handle_text(message):
 
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
+    user_last_activity[message.from_user.id] = datetime.now()
     loc = message.location
     logging.info(f"Received location: lat={loc.latitude}, lon={loc.longitude}")
     
@@ -287,10 +308,23 @@ def handle_location(message):
     
     # Send weather report with buttons
     bot.send_message(message.chat.id, format_weather(weather_data), reply_markup=markup)
-
+@bot.message_handler(func=lambda message: True)
+def handle_unrecognized(message):
+    user_last_activity[message.from_user.id] = datetime.now()
+    user_id = message.from_user.id
+    
+    if not check_user_activity(user_id):
+        # New or inactive user gets start prompt
+        bot.reply_to(message, "👋 Welcome! Please type /start to begin")
+    else:
+        # Active user gets city not found style message
+        bot.reply_to(message, "📍 Please send me a city name or your location to get weather info\n\n"
+                      "Type /help if you need assistance")
+        
 # Callback handlers for inline buttons
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
+    user_last_activity[message.from_user.id] = datetime.now()
     try:
         if call.data.startswith('aqi:'):
             city = call.data.split(':')[1]
