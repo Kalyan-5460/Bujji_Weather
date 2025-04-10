@@ -11,34 +11,35 @@ from email.mime.text import MIMEText
 from email.message import EmailMessage
 import os
 import logging
-
-app = Flask(__name__)
+import time
 from flask import Response
-
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
-
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
-
-
-@app.route('/webhook', methods=["POST"])
-def webhook():
-    update = request.get_json()
-    bot.process_new_updates([telebot.types.Update.de_json(update)])
-    return '', 200
 
 
 # Load environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
+API_KEY = os.environ.get("API_KEY")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
+app = Flask(__name__)
+bot = telebot.TeleBot(os.environ.get("BOT_TOKEN"))
 
-bot = telebot.TeleBot(BOT_TOKEN)
-
+@app.route("/", methods=["GET", "HEAD"])
+def home():
+    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
+@app.route('/' + os.environ.get("BOT_TOKEN"), methods=["POST"])
+def webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "ok", 200
+def validate_city(city):
+    return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
+    
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 # Funny tips generator
 def get_funny_tip(temp_c, condition):
     if temp_c > 35:
@@ -96,27 +97,28 @@ def get_weather(city):
 
 # Weather by coordinates
 def get_weather_by_location(lat, lon):
-    API_KEY = os.environ.get("API_KEY")
     url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
-    response = requests.get(url)
-    data = response.json()
-    if response.status_code != 200 or data.get('cod') != 200:
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        city = data['name']
+        temp = data['main']['temp']
+        condition = data['weather'][0]['description']
+        humidity = data['main']['humidity']
+        tip = get_funny_tip(temp, condition)
+
+        return (
+            f"\ud83d\udccd Weather in {city}:\n"
+            f"\ud83c\udf21\ufe0f Temp: {temp}\u00b0C\n"
+            f"\u2601\ufe0f Condition: {condition}\n"
+            f"\ud83d\udca7 Humidity: {humidity}%\n"
+            f"{tip}"
+        )
+    except (requests.exceptions.RequestException, ValueError) as e:
+        logging.error(f"API request failed: {str(e)}")
         return None
-
-    city = data['name']
-    temp = data['main']['temp']
-    condition = data['weather'][0]['description']
-    humidity = data['main']['humidity']
-    tip = get_funny_tip(temp, condition)
-
-    return (
-        f"\ud83d\udccd Weather in {city}:\n"
-        f"\ud83c\udf21\ufe0f Temp: {temp}\u00b0C\n"
-        f"\u2601\ufe0f Condition: {condition}\n"
-        f"\ud83d\udca7 Humidity: {humidity}%\n"
-        f"{tip}"
-    )
-
 # AQI
 
 def get_aqi(city):
@@ -244,11 +246,6 @@ def help_cmd(message):
         "📝 Send feedback using /feedback"
     ))
 
-@app.route('/' + BOT_TOKEN, methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "ok", 200
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
@@ -273,25 +270,15 @@ def about_cmd(message):
     ), parse_mode="Markdown")
     
 bot.remove_webhook()
-bot.set_webhook(url=f"https://bujji-weather.onrender.com/{BOT_TOKEN}")
-def run_bot():
-    bot.infinity_polling()
+
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
 
 if __name__ == "__main__":
-    import time
-
-    # Set your public URL where Flask app is hosted (e.g., Render)
-    WEBHOOK_URL = f"https://bujji-weather.onrender.com/{BOT_TOKEN}"  # Change this to your actual domain + token
-
-    # Remove any existing webhook
+    # Initialize webhook
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
     bot.remove_webhook()
-    time.sleep(1)  # small delay to ensure removal
+    time.sleep(1)
+    bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{os.environ.get('BOT_TOKEN')}")
 
-    # Set webhook to the correct public URL
-    bot.set_webhook(url=WEBHOOK_URL)
-
-    # Run the Flask app
+    # Start Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-
-
