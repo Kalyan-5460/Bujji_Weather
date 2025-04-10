@@ -166,6 +166,31 @@ def request_feedback(message):
     msg = bot.reply_to(message, "📝 Please type your feedback below:")
     bot.register_next_step_handler(msg, process_feedback)
 
+def process_feedback(message):
+    user = message.from_user
+    try:
+        send_email_feedback(user, message.text)
+        bot.reply_to(message, "📩 Thanks! Your feedback has been sent.")
+    except Exception as e:
+        logging.error(f"Feedback processing failed: {str(e)}")
+        bot.reply_to(message, "⚠️ Failed to send feedback. Please try again later.")
+
+def send_email_feedback(user, text):
+    msg = EmailMessage()
+    msg.set_content(
+        f"New feedback from Bujji Bot:\n\n"
+        f"User: @{user.username or 'N/A'} ({user.first_name} {user.last_name or ''})\n"
+        f"User ID: {user.id}\n\n"
+        f"Message:\n{text}"
+    )
+    msg['Subject'] = f"Bujji Feedback from {user.first_name}"
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = RECEIVER_EMAIL
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(SENDER_EMAIL, APP_PASSWORD)
+        smtp.send_message(msg)
+    logging.info(f"Feedback email sent for user {user.id}")
 # Weather data handlers
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
