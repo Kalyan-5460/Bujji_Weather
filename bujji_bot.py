@@ -100,6 +100,17 @@ def get_weather_data(city):
         logging.error(f"Weather API error: {str(e)}")
         return None
 
+@cache.memoize(timeout=300)
+def get_weather_data_by_coords(lat, lon):
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Weather API error by coords: {str(e)}")
+        return None
+        
 @cache.memoize(timeout=3600)
 def get_aqi_data(lat, lon):
     url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
@@ -252,7 +263,17 @@ def handle_text(message):
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
     loc = message.location
-    weather_data = get_weather_data(f"{loc.latitude},{loc.longitude}")
+    logging.info(f"Received location: lat={loc.latitude}, lon={loc.longitude}")
+    
+    # Validate coordinates
+    if not (-90 <= loc.latitude <= 90) or not (-180 <= loc.longitude <= 180):
+        return bot.reply_to(message, "⚠️ Invalid location coordinates received")
+    
+    # Show typing action while processing
+    bot.send_chat_action(message.chat.id, 'typing')
+    
+    # Get weather data using coordinates
+    weather_data = get_weather_data_by_coords(loc.latitude, loc.longitude)
     
     if not weather_data:
         return bot.reply_to(message, "⚠️ Couldn't fetch weather for this location")
@@ -316,7 +337,7 @@ def handle_callback_query(call):
             lat, lon = call.data.split(':')[1].split(',')
             forecast = get_forecast_data(float(lat), float(lon))
             if forecast:
-                weather_data = get_weather_data(f"{lat},{lon}")
+                weather_data = get_weather_data_by_coords(float(lat), float(lon))
                 city = weather_data['name'] if weather_data else "your location"
                 bot.send_message(
                     call.message.chat.id,
