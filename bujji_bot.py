@@ -14,7 +14,7 @@ from flask_limiter.util import get_remote_address
 import smtplib
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ===== INITIALIZATION =====
+# Initialize Flask app
 app = Flask(__name__)
 
 # Validate environment variables
@@ -51,7 +51,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# ===== CONSTANTS =====
+# Constants
 AQI_LEVELS = {
     1: "😃 Good",
     2: "🙂 Fair", 
@@ -60,24 +60,13 @@ AQI_LEVELS = {
     5: "☠️ Very Poor"
 }
 
-CITY_MAPPING ={
-    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
-    "mvp colony": "Visakhapatnam", "madhurawada": "Visakhapatnam", "rajahmundry": "Rajahmundry",
-    "kakinada": "Kakinada", "vizianagaram": "Vizianagaram", "tirupati": "Tirupati",
-    "guntur": "Guntur", "vijayawada": "Vijayawada", "tenali": "Guntur", "ongole": "Ongole",
-    "nellore": "Nellore", "sriharikota": "Nellore", "srikakulam": "Srikakulam", "eluru": "Eluru",
-    "machilipatnam": "Machilipatnam", "tadepalligudem": "Tadepalligudem", "narasaraopet": "Guntur",
-    "kadapa": "Kadapa", "ananthapur": "Anantapur", "chittoor": "Chittoor",
-    "madhapur": "Hyderabad", "gachibowli": "Hyderabad", "ameerpet": "Hyderabad",
-    "kukatpally": "Hyderabad", "uppal": "Hyderabad", "secunderabad": "Hyderabad",
-    "lb nagar": "Hyderabad", "bhel": "Hyderabad", "warangal": "Warangal",
-    "karimnagar": "Karimnagar", "khammam": "Khammam", "nizamabad": "Nizamabad",
-    "siddipet": "Siddipet", "nalgonda": "Nalgonda", "zaheerabad": "Zaheerabad",
-    "mahabubnagar": "Mahbubnagar"
+CITY_MAPPING = {
+    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam",
+    "visakapatnam": "Visakhapatnam", "vizag": "Visakhapatnam",
+    "hyderabad": "Hyderabad", "banglore": "Bengaluru",
 }
 
-
-# ===== UTILITY FUNCTIONS =====
+# Utility functions
 def validate_city(city):
     return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
 
@@ -88,7 +77,7 @@ def get_funny_tip(temp_c):
     elif temp_c > 10: return "🧥 It's chilly. Wear a jacket!"
     else: return "🥶 Bundle up like a snowman!"
 
-# ===== WEATHER API FUNCTIONS =====
+# Weather API functions
 @cache.memoize(timeout=300)
 def get_weather_data(city):
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
@@ -120,13 +109,14 @@ def get_forecast_data(lat, lon):
     except Exception:
         return None
 
-# ===== MESSAGE FORMATTING =====
+# Message formatting
 def format_weather(data, original_city=None):
     if not data: return None
     
     city = data['name']
     main = data['main']
     weather = data['weather'][0]
+    wind = data['wind']
     sys = data['sys']
     
     response = []
@@ -139,7 +129,7 @@ def format_weather(data, original_city=None):
         f"🌡️ Temp: {main['temp']}°C\n",
         f"☁️ Condition: {weather['description'].title()}\n",
         f"💧 Humidity: {main['humidity']}%\n",
-        f"🌬️ Wind: {data['wind']['speed']} m/s\n",
+        f"🌬️ Wind: {wind['speed']} m/s\n",
         f"🌅 Sunrise: {datetime.fromtimestamp(sys['sunrise']).strftime('%H:%M')}\n",
         f"🌇 Sunset: {datetime.fromtimestamp(sys['sunset']).strftime('%H:%M')}\n",
         f"{get_funny_tip(main['temp'])}\n"
@@ -147,16 +137,16 @@ def format_weather(data, original_city=None):
     
     return "".join(response)
 
-def format_forecast(forecast_data):
-    forecast = ["📅 Next 24 Hours Forecast:\n\n"]
+def format_forecast(forecast_data, city):
+    forecast = [f"📅 24h Forecast for {city}:\n\n"]
     for item in forecast_data['list']:
         time_str = datetime.fromtimestamp(item['dt']).strftime('🕒 %H:%M')
         forecast.append(
-            f"{time_str} - 🌡️{item['main']['temp']}°C - {item['weather'][0]['description'].title()}\n"
+            f"{time_str} – 🌡️{item['main']['temp']}°C – {item['weather'][0]['description'].title()}\n"
         )
     return "".join(forecast)
 
-# ===== EMAIL FEEDBACK =====
+# Email feedback
 def send_feedback_email(user, message_text):
     try:
         msg = EmailMessage()
@@ -180,7 +170,7 @@ def send_feedback_email(user, message_text):
         logging.error(f"Failed to send feedback email: {str(e)}")
         return False
 
-# ===== BOT HANDLERS =====
+# Bot handlers
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_msg = (
@@ -237,19 +227,16 @@ def handle_text(message):
     if not weather_data:
         return bot.reply_to(message, f"😔 Couldn't find weather for '{user_input}'\nTry sending your location instead 📍")
     
-    # Send weather report
+    # Create inline keyboard
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("💨 AQI", callback_data=f"aqi:{mapped_city}"),
+        InlineKeyboardButton("⏱️ Forecast", callback_data=f"forecast:{mapped_city}")
+    )
+    
+    # Send weather report with buttons
     weather_msg = format_weather(weather_data, user_input)
-    bot.send_message(message.chat.id, weather_msg)
-    
-    # Send AQI
-    aqi = get_aqi_data(weather_data['coord']['lat'], weather_data['coord']['lon'])
-    if aqi:
-        bot.send_message(message.chat.id, f"🌬️ Air Quality: {aqi} - {AQI_LEVELS.get(aqi, 'Unknown')}")
-    
-    # Send forecast
-    forecast = get_forecast_data(weather_data['coord']['lat'], weather_data['coord']['lon'])
-    if forecast:
-        bot.send_message(message.chat.id, format_forecast(forecast))
+    bot.send_message(message.chat.id, weather_msg, reply_markup=markup)
 
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
@@ -259,20 +246,79 @@ def handle_location(message):
     if not weather_data:
         return bot.reply_to(message, "⚠️ Couldn't fetch weather for this location")
     
-    # Send weather report
-    bot.send_message(message.chat.id, format_weather(weather_data))
+    # Create inline keyboard
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("💨 AQI", callback_data=f"aqi_loc:{loc.latitude},{loc.longitude}"),
+        InlineKeyboardButton("⏱️ Forecast", callback_data=f"forecast_loc:{loc.latitude},{loc.longitude}")
+    )
     
-    # Send AQI
-    aqi = get_aqi_data(loc.latitude, loc.longitude)
-    if aqi:
-        bot.send_message(message.chat.id, f"🌬️ Air Quality: {aqi} - {AQI_LEVELS.get(aqi, 'Unknown')}")
-    
-    # Send forecast
-    forecast = get_forecast_data(loc.latitude, loc.longitude)
-    if forecast:
-        bot.send_message(message.chat.id, format_forecast(forecast))
+    # Send weather report with buttons
+    bot.send_message(message.chat.id, format_weather(weather_data), reply_markup=markup)
 
-# ===== FLASK ROUTES =====
+# Callback handlers for inline buttons
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback_query(call):
+    try:
+        if call.data.startswith('aqi:'):
+            city = call.data.split(':')[1]
+            weather_data = get_weather_data(city)
+            if weather_data:
+                aqi = get_aqi_data(weather_data['coord']['lat'], weather_data['coord']['lon'])
+                if aqi:
+                    bot.send_message(
+                        call.message.chat.id,
+                        f"🌬️ Air Quality in {city}: {aqi} - {AQI_LEVELS.get(aqi, 'Unknown')} 💨"
+                    )
+                else:
+                    bot.answer_callback_query(call.id, "⚠️ Couldn't fetch AQI data")
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch weather data")
+                
+        elif call.data.startswith('forecast:'):
+            city = call.data.split(':')[1]
+            weather_data = get_weather_data(city)
+            if weather_data:
+                forecast = get_forecast_data(weather_data['coord']['lat'], weather_data['coord']['lon'])
+                if forecast:
+                    bot.send_message(
+                        call.message.chat.id,
+                        format_forecast(forecast, city)
+                    )
+                else:
+                    bot.answer_callback_query(call.id, "⚠️ Couldn't fetch forecast")
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch weather data")
+                
+        elif call.data.startswith('aqi_loc:'):
+            lat, lon = call.data.split(':')[1].split(',')
+            aqi = get_aqi_data(float(lat), float(lon))
+            if aqi:
+                bot.send_message(
+                    call.message.chat.id,
+                    f"🌬️ Air Quality: {aqi} - {AQI_LEVELS.get(aqi, 'Unknown')} 💨"
+                )
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch AQI data")
+                
+        elif call.data.startswith('forecast_loc:'):
+            lat, lon = call.data.split(':')[1].split(',')
+            forecast = get_forecast_data(float(lat), float(lon))
+            if forecast:
+                weather_data = get_weather_data(f"{lat},{lon}")
+                city = weather_data['name'] if weather_data else "your location"
+                bot.send_message(
+                    call.message.chat.id,
+                    format_forecast(forecast, city)
+                )
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch forecast")
+                
+    except Exception as e:
+        logging.error(f"Callback query error: {str(e)}")
+        bot.answer_callback_query(call.id, "⚠️ Error processing request")
+
+# Flask routes
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "default-secret-123")
 
 @app.route(f'/{WEBHOOK_SECRET}', methods=['POST'])
@@ -291,7 +337,7 @@ def home():
 def health_check():
     return {"status": "healthy", "bot": "online"}, 200
 
-# ===== START SERVER =====
+# Start server
 if __name__ == "__main__":
     # Verify connection
     try:
