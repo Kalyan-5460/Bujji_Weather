@@ -61,10 +61,21 @@ AQI_LEVELS = {
 }
 
 CITY_MAPPING = {
-    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam",
-    "visakapatnam": "Visakhapatnam", "vizag": "Visakhapatnam",
-    "hyderabad": "Hyderabad", "banglore": "Bengaluru",
+    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
+    "mvp colony": "Visakhapatnam", "madhurawada": "Visakhapatnam", "rajahmundry": "Rajahmundry",
+    "kakinada": "Kakinada", "vizianagaram": "Vizianagaram", "tirupati": "Tirupati",
+    "guntur": "Guntur", "vijayawada": "Vijayawada", "tenali": "Guntur", "ongole": "Ongole",
+    "nellore": "Nellore", "sriharikota": "Nellore", "srikakulam": "Srikakulam", "eluru": "Eluru",
+    "machilipatnam": "Machilipatnam", "tadepalligudem": "Tadepalligudem", "narasaraopet": "Guntur",
+    "kadapa": "Kadapa", "ananthapur": "Anantapur", "chittoor": "Chittoor",
+    "madhapur": "Hyderabad", "gachibowli": "Hyderabad", "ameerpet": "Hyderabad",
+    "kukatpally": "Hyderabad", "uppal": "Hyderabad", "secunderabad": "Hyderabad",
+    "lb nagar": "Hyderabad", "bhel": "Hyderabad", "warangal": "Warangal",
+    "karimnagar": "Karimnagar", "khammam": "Khammam", "nizamabad": "Nizamabad",
+    "siddipet": "Siddipet", "nalgonda": "Nalgonda", "zaheerabad": "Zaheerabad",
+    "mahabubnagar": "Mahbubnagar"
 }
+
 
 # Utility functions
 def validate_city(city):
