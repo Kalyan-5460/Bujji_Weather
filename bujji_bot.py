@@ -15,8 +15,15 @@ import logging
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "HEAD"])
-def index():
-    return Response("✅ Bujji Weather Bot is running fine! 🌦️", content_type="text/plain; charset=utf-8")
+def home():
+    if request.method == "HEAD":
+        return "", 200  # respond with headers only
+    return "Welcome to Bujji Weather Bot! ☀️🌧️❄️", 200
+@app.route('/webhook', methods=["POST"])
+def webhook():
+    update = request.get_json()
+    bot.process_new_updates([telebot.types.Update.de_json(update)])
+    return '', 200
 
 
 # Load environment variables
