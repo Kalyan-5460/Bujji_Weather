@@ -102,14 +102,19 @@ def get_funny_tip(temp_c, condition):
 # Weather data functions with caching
 @cache.memoize(timeout=300)  # 5 minute cache
 def get_weather_data(city):
-    """Fetch weather data from API with caching"""
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()
+        
+        # Add detailed error logging
+        if response.status_code == 401:
+            logging.critical(f"Invalid API Key! Check Render environment variables")
+        
+        response.raise_for_status()  # This will now raise proper errors
         return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Weather API error for {city}: {str(e)}")
+        
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"API Error for {city}: {str(e)}")
         return None
 
 def format_weather_response(data, city):
