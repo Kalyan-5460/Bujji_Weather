@@ -1,19 +1,31 @@
-from flask import Flask, request
-from flask import Response
-import threading
+from flask import Flask, request, Response
 import telebot
-from telebot import types
+from telebot import types, util
 import requests
-import random
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import smtplib
-from email.mime.text import MIMEText
 from email.message import EmailMessage
 import os
+import re
 import logging
 import time
-from flask import Response
+from datetime import datetime
+from flask_caching import Cache
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import smtplib
 
+# Initialize Flask app
+app = Flask(__name__)
+
+# Configure caching
+cache = Cache(config={'CACHE_TYPE': 'SimpleCache'})
+cache.init_app(app)
+
+# Configure rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 # Load environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -22,263 +34,196 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 API_KEY = os.environ.get("API_KEY")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
-app = Flask(__name__)
-bot = telebot.TeleBot(os.environ.get("BOT_TOKEN"))
 
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
-@app.route('/' + os.environ.get("BOT_TOKEN"), methods=["POST"])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "ok", 200
-def validate_city(city):
-    return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
-    
+# Initialize Telegram bot
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-# Funny tips generator
-def get_funny_tip(temp_c, condition):
-    if temp_c > 35:
-        return "\ud83e\udd75 It's boiling! Stay hydrated and wear sunscreen! \u2600\ufe0f"
-    elif temp_c > 28:
-        return "\ud83d\ude0e Warm and sunny \u2013 perfect for shades and chilled drinks."
-    elif temp_c > 20:
-        return "\ud83d\ude0a Nice weather! Go for a walk or chill outside."
-    elif temp_c > 10:
-        return "\ud83e\udde5 It's getting chilly. Wear a jacket, bujji!"
-    else:
-        return "\ud83e\udd76 Brrr! Bundle up like a snowman!"
 
-# AQI levels
-aqi_levels = {1: "\ud83d\ude03 Good", 2: "\ud83d\ude42 Fair", 3: "\ud83d\ude10 Moderate", 4: "\ud83e\udd37 Poor", 5: "\u2620\ufe0f Very Poor"}
-
-# City mapping
-local_to_city = {
-    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
-    "mvp colony": "Visakhapatnam", "madhurawada": "Visakhapatnam", "rajahmundry": "Rajahmundry",
-    "kakinada": "Kakinada", "vizianagaram": "Vizianagaram", "tirupati": "Tirupati",
-    "guntur": "Guntur", "vijayawada": "Vijayawada", "tenali": "Guntur", "ongole": "Ongole",
-    "nellore": "Nellore", "sriharikota": "Nellore", "srikakulam": "Srikakulam", "eluru": "Eluru",
-    "machilipatnam": "Machilipatnam", "tadepalligudem": "Tadepalligudem", "narasaraopet": "Guntur",
-    "kadapa": "Kadapa", "ananthapur": "Anantapur", "chittoor": "Chittoor",
-    "madhapur": "Hyderabad", "gachibowli": "Hyderabad", "ameerpet": "Hyderabad",
-    "kukatpally": "Hyderabad", "uppal": "Hyderabad", "secunderabad": "Hyderabad",
-    "lb nagar": "Hyderabad", "bhel": "Hyderabad", "warangal": "Warangal",
-    "karimnagar": "Karimnagar", "khammam": "Khammam", "nizamabad": "Nizamabad",
-    "siddipet": "Siddipet", "nalgonda": "Nalgonda", "zaheerabad": "Zaheerabad",
-    "mahabubnagar": "Mahbubnagar"
+# Constants
+AQI_LEVELS = {
+    1: "😃 Good",
+    2: "🙂 Fair", 
+    3: "😐 Moderate",
+    4: "🤧 Poor",
+    5: "☠️ Very Poor"
 }
 
-# Weather by city
-def get_weather(city):
-    API_KEY = os.environ.get("API_KEY")
+CITY_MAPPING = {
+    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam",
+    # ... (keep your existing city mappings)
+}
+
+# Utility functions
+def validate_city(city):
+    """Validate city name format"""
+    return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
+
+def get_funny_tip(temp_c, condition):
+    """Generate humorous weather tips"""
+    if temp_c > 35:
+        return "🥵 It's boiling! Stay hydrated and wear sunscreen! ☀️"
+    elif temp_c > 28:
+        return "😎 Warm and sunny - perfect for shades and chilled drinks."
+    elif temp_c > 20:
+        return "😊 Nice weather! Go for a walk or chill outside."
+    elif temp_c > 10:
+        return "🤕 It's getting chilly. Wear a jacket, bujji!"
+    else:
+        return "🥶 Brrr! Bundle up like a snowman!"
+
+# Weather data functions with caching
+@cache.memoize(timeout=300)  # 5 minute cache
+def get_weather_data(city):
+    """Fetch weather data from API with caching"""
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
-    response = requests.get(url)
-    data = response.json()
-    if response.status_code != 200 or data.get('cod') != 200:
-        return None
-
-    temp = data['main']['temp']
-    condition = data['weather'][0]['description']
-    humidity = data['main']['humidity']
-    tip = get_funny_tip(temp, condition)
-
-    return (
-        f"\ud83d\udccd Weather in {city.title()}:\n"
-        f"\ud83c\udf21\ufe0f Temp: {temp}\u00b0C\n"
-        f"\u2601\ufe0f Condition: {condition}\n"
-        f"\ud83d\udca7 Humidity: {humidity}%\n"
-        f"{tip}"
-    )
-
-# Weather by coordinates
-def get_weather_by_location(lat, lon):
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        
-        city = data['name']
-        temp = data['main']['temp']
-        condition = data['weather'][0]['description']
-        humidity = data['main']['humidity']
-        tip = get_funny_tip(temp, condition)
-
-        return (
-            f"\ud83d\udccd Weather in {city}:\n"
-            f"\ud83c\udf21\ufe0f Temp: {temp}\u00b0C\n"
-            f"\u2601\ufe0f Condition: {condition}\n"
-            f"\ud83d\udca7 Humidity: {humidity}%\n"
-            f"{tip}"
-        )
-    except (requests.exceptions.RequestException, ValueError) as e:
-        logging.error(f"API request failed: {str(e)}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Weather API error for {city}: {str(e)}")
         return None
-# AQI
 
-def get_aqi(city):
-    API_KEY = os.environ.get("API_KEY")
-    geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}"
-    geo_data = requests.get(geo_url).json()
-    if not geo_data:
-        return "Couldn't find location for AQI."
-
-    lat = geo_data[0]['lat']
-    lon = geo_data[0]['lon']
-    aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
-    aqi_data = requests.get(aqi_url).json()
-    if not aqi_data or 'list' not in aqi_data:
-        return "Couldn't fetch AQI data."
-
-    aqi = aqi_data['list'][0]['main']['aqi']
-    return f"\ud83c\udf2c\ufe0f AQI in {city.title()}: {aqi} - {aqi_levels.get(aqi, 'Unknown')} \ud83d\udca8"
-
-# Forecast
-def get_forecast(city):
-    API_KEY = os.environ.get("API_KEY")
-    url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={API_KEY}&units=metric"
-    data = requests.get(url).json()
-    if data.get('cod') != "200":
-        return "Couldn't fetch forecast data."
-
-    forecast_list = data['list'][:8]
-    lines = [f"\ud83d\udcc5 Forecast for {city.title()} (next 24hrs):\n"]
-    for item in forecast_list:
-        time = item['dt_txt'].split(" ")[1][:5]
-        temp = item['main']['temp']
-        cond = item['weather'][0]['description']
-        lines.append(f"\ud83d\udd52 {time} – \ud83c\udf21\ufe0f {temp}\u00b0C – {cond}")
-    return "\n".join(lines)
-
-# Feedback
-@bot.message_handler(commands=['feedback'])
-def ask_feedback(message):
-    msg = bot.send_message(message.chat.id, "\ud83d\udcdd Please type your feedback below:")
-    bot.register_next_step_handler(msg, process_feedback)
-
-def process_feedback(message):
-    user = message.from_user
-    feedback_message = f"Feedback from @{user.username or user.first_name}:\n\n{message.text}"
-    send_email_feedback(user, message.text)
-    bot.send_message(message.chat.id, "\ud83d\ude4f Thanks Bujji! Your feedback has been sent successfully.")
-
-def send_email_feedback(user, text):
-    subject = f"Bujji Bot Feedback from {user.first_name or user.username}"
-    body = f"User @{user.username or 'N/A'} ({user.id}) said:\n\n{text}"
-
-    msg = EmailMessage()
-    msg.set_content(body)
-    msg['Subject'] = subject
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL
-
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(SENDER_EMAIL, APP_PASSWORD)
-            smtp.send_message(msg)
-        logging.info("Feedback sent from user: %s", user.username)
-
-            
-    except Exception as e:
-        logging.error("Email sending failed: %s", e)
-
+def format_weather_response(data, city):
+    """Format weather data into user-friendly message"""
+    if not data:
+        return None
+        
+    main = data['main']
+    weather = data['weather'][0]
+    wind = data['wind']
+    sys = data['sys']
     
-# Location handler
-@bot.message_handler(content_types=['location'])
-def handle_location(message):
-    loc = message.location
-    weather = get_weather_by_location(loc.latitude, loc.longitude)
-    if weather:
-        bot.send_message(message.chat.id, weather)
-    else:
-        bot.send_message(message.chat.id, "Sorry, couldn't fetch weather for your location.")
+    return (
+        f"📍 Weather in {city.title()}:\n"
+        f"🌡️ Temp: {main['temp']}°C\n"
+        f"☁️ Condition: {weather['description']}\n"
+        f"💧 Humidity: {main['humidity']}%\n"
+        f"🌬️ Wind: {wind['speed']} m/s\n"
+        f"🌅 Sunrise: {datetime.fromtimestamp(sys['sunrise']).strftime('%H:%M')}\n"
+        f"🌇 Sunset: {datetime.fromtimestamp(sys['sunset']).strftime('%H:%M')}\n"
+        f"{get_funny_tip(main['temp'], weather['description'])}"
+    )
 
-# Text handler
-@bot.message_handler(content_types=['text'])
-def handle_text(message):
-    user_input = message.text.lower().strip()
-    actual_city = local_to_city.get(user_input, user_input)
-    if actual_city != user_input:
-        bot.send_message(message.chat.id, f"\ud83d\udccd '{user_input}' not found. Showing weather for: {actual_city.title()} \ud83c\udf10")
-    weather = get_weather(actual_city)
-    if weather:
-        markup = InlineKeyboardMarkup()
-        markup.add(
-            InlineKeyboardButton("\ud83d\udd0d Get AQI", callback_data=f"aqi:{actual_city}"),
-            InlineKeyboardButton("\u23f3 24hrs Forecast", callback_data=f"forecast:{actual_city}")
-        )
-        bot.send_message(message.chat.id, weather, reply_markup=markup)
-    else:
-        bot.send_message(message.chat.id, "City not found. Please check the spelling or try a nearby city.")
-
-# Inline buttons
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data.startswith("aqi:"):
-        city = call.data.split(":")[1]
-        aqi_info = get_aqi(city)
-        bot.send_message(call.message.chat.id, aqi_info)
-    elif call.data.startswith("forecast:"):
-        city = call.data.split(":")[1]
-        forecast = get_forecast(city)
-        bot.send_message(call.message.chat.id, forecast)
-
-# Start command
+# Bot command handlers
 @bot.message_handler(commands=['start'])
-def start_cmd(message):
-    name = message.from_user.first_name
+def send_welcome(message):
+    """Handle /start command"""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("\ud83d\udccd Send My Location", request_location=True))
-    bot.send_message(message.chat.id, f"Hi {name}! \ud83c\udf24\ufe0f Send a city name or share your location for weather updates.", reply_markup=markup)
+    markup.add(types.KeyboardButton("📍 Send My Location", request_location=True))
+    bot.reply_to(message, 
+                f"Hi {message.from_user.first_name}! 🌤️ Send a city name or share your location for weather updates.",
+                reply_markup=markup)
+
 @bot.message_handler(commands=['help'])
-def help_cmd(message):
-    bot.send_message(message.chat.id, (
+def send_help(message):
+    """Handle /help command"""
+    help_text = (
         "Hi Bujji! Here's what I can do:\n\n"
         "📍 Share your location for weather\n"
         "🏙️ Send a city name\n"
         "💨 Get AQI info\n"
         "⏱️ Get 24-hour forecast\n"
         "📝 Send feedback using /feedback"
-    ))
+    )
+    bot.reply_to(message, help_text)
 
-@app.route('/favicon.ico')
-def favicon():
-    return '', 204
-@app.errorhandler(Exception)
-def handle_error(e):
-    logging.error("Unhandled exception: %s", e)
-    return "Something went wrong.", 500
 @bot.message_handler(commands=['about'])
-def about_cmd(message):
-    bot.send_message(message.chat.id, (
-        "🔹 Hi,This is Bujji\n"
-        "🌦️ *Bujji Weather Bot* – Your personal weather buddy!\n\n"
-        "🔹 Get real-time weather updates 🌍\n"
-        "🔹 Know the AQI (Air Quality Index) 💨\n"
-        "🔹 See 24-hour forecasts ⏱️\n"
-        "🔹 Share your location or type a city name 📍\n"
-        "🔹 Fun tips based on weather 😄\n"
-        "🔹 Give feedback with /feedback 📝\n\n"
-        "✨ Created with ❤️ by Malapareddy Kalyan Venkat Vinay. Always improving for you!\n"
-        "🌐 Hosted 24/7 on Render\n\n"
-        "_Type /help to see what I can do!_"
-    ), parse_mode="Markdown")
-    
-bot.remove_webhook()
+def send_about(message):
+    """Handle /about command"""
+    about_text = (
+        "🌦️ *Bujji Weather Bot* - Your personal weather buddy!\n\n"
+        "🔹 Real-time weather updates\n"
+        "🔹 Air Quality Index (AQI)\n" 
+        "🔹 24-hour forecasts\n"
+        "🔹 Location-based weather\n"
+        "🔹 Fun weather tips\n\n"
+        "✨ Created with ❤️ by [Your Name]\n"
+        "🌐 Hosted on Render"
+    )
+    bot.reply_to(message, about_text, parse_mode="Markdown")
 
-RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
+@bot.message_handler(commands=['feedback'])
+def request_feedback(message):
+    """Handle /feedback command"""
+    msg = bot.reply_to(message, "📝 Please type your feedback below:")
+    bot.register_next_step_handler(msg, process_feedback)
+
+# Weather data handlers
+@bot.message_handler(content_types=['location'])
+def handle_location(message):
+    """Handle location messages"""
+    loc = message.location
+    weather_data = get_weather_by_coords(loc.latitude, loc.longitude)
+    if weather_data:
+        bot.reply_to(message, weather_data)
+    else:
+        bot.reply_to(message, "⚠️ Couldn't fetch weather for your location.")
+
+@bot.message_handler(content_types=['text'])
+@limiter.limit("5 per minute", key_func=lambda m: m.from_user.id)
+def handle_city_request(message):
+    """Handle city name requests"""
+    user_input = message.text.strip()
+    
+    if not validate_city(user_input):
+        return bot.reply_to(message, "⚠️ Invalid city name format. Please try again.")
+        
+    city = CITY_MAPPING.get(user_input.lower(), user_input)
+    weather_data = get_weather_data(city)
+    
+    if not weather_data:
+        return bot.reply_to(message, "⚠️ City not found. Please check the spelling.")
+        
+    formatted_weather = format_weather_response(weather_data, city)
+    markup = create_weather_markup(city)
+    bot.reply_to(message, formatted_weather, reply_markup=markup)
+
+# Helper functions
+def create_weather_markup(city):
+    """Create inline keyboard for weather options"""
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("💨 AQI", callback_data=f"aqi:{city}"),
+        InlineKeyboardButton("⏱️ Forecast", callback_data=f"forecast:{city}")
+    )
+    return markup
+
+def get_weather_by_coords(lat, lon):
+    """Get weather by coordinates"""
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return format_weather_response(data, data['name'])
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Location weather error: {str(e)}")
+        return None
+
+# Flask routes
+@app.route("/")
+def home():
+    return Response("Bujji Weather Bot is running! 😎", mimetype="text/plain")
+
+@app.route(f'/{BOT_TOKEN}', methods=["POST"])
+@limiter.limit("10 per minute")
+def webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "ok", 200
+
+@app.route('/health')
+def health_check():
+    return {"status": "healthy"}, 200
 
 if __name__ == "__main__":
-    # Initialize webhook
-    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
     bot.remove_webhook()
     time.sleep(1)
-    bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{os.environ.get('BOT_TOKEN')}")
-
-    # Start Flask
+    bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
