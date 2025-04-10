@@ -175,16 +175,56 @@ def handle_callback_query(call):
         logging.error(f"Callback query error: {str(e)}")
         bot.answer_callback_query(call.id, "⚠️ Error processing request")
 
+@cache.memoize(timeout=3600)  # 1 hour cache for AQI
 def get_aqi_data(city):
-    """Implement actual AQI lookup logic"""
-    # Placeholder - implement with your AQI API
-    return None
-
+    """Get AQI data from OpenWeatherMap Air Pollution API"""
+    try:
+        # First get coordinates for the city
+        geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}"
+        geo_resp = requests.get(geo_url, timeout=5)
+        geo_resp.raise_for_status()
+        geo_data = geo_resp.json()
+        
+        if not geo_data:
+            return None
+            
+        lat, lon = geo_data[0]['lat'], geo_data[0]['lon']
+        
+        # Get air pollution data
+        aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+        aqi_resp = requests.get(aqi_url, timeout=5)
+        aqi_resp.raise_for_status()
+        aqi_data = aqi_resp.json()
+        
+        # Map AQI value to your levels (1-5)
+        aqi = aqi_data['list'][0]['main']['aqi']
+        return min(max(1, aqi), 5)  # Ensure it's between 1-5
+        
+    except Exception as e:
+        logging.error(f"AQI API error for {city}: {str(e)}")
+        return None
+@cache.memoize(timeout=1800)  # 30 minute cache for forecast
 def get_forecast_data(city):
-    """Implement actual forecast lookup logic"""
-    # Placeholder - implement with your forecast API
-    return None
-
+    """Get 24-hour forecast from OpenWeatherMap"""
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={API_KEY}&units=metric&cnt=4"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        forecast = []
+        for item in data['list'][:4]:  # Next 24 hours (3-hour intervals)
+            time_str = datetime.fromtimestamp(item['dt']).strftime('%H:%M')
+            forecast.append(
+                f"{time_str}: {item['weather'][0]['description']}, "
+                f"{item['main']['temp']}°C"
+            )
+        
+        return "⏱️ Next 24 hours:\n" + "\n".join(forecast)
+        
+    except Exception as e:
+        logging.error(f"Forecast API error for {city}: {str(e)}")
+        return None
 # Change the webhook route to use a more secure path
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-path")
 
@@ -294,7 +334,12 @@ def get_weather_by_coords(lat, lon):
     except requests.exceptions.RequestException as e:
         logging.error(f"Location weather error: {str(e)}")
         return None
-
+@app.route('/clear-cache', methods=['POST'])
+def clear_cache():
+    if request.headers.get('X-Auth') == os.environ.get('CACHE_CLEAR_SECRET'):
+        cache.clear()
+        return "Cache cleared", 200
+    return "Unauthorized", 401
 # Flask routes
 @app.route("/")
 def home():
