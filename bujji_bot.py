@@ -12,6 +12,17 @@ from flask_caching import Cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import smtplib
+# At the top of your file:
+import multiprocessing
+# Add this import at the top
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
+# Validate environment variables
+required_vars = ["BOT_TOKEN", "SENDER_EMAIL", "APP_PASSWORD", "API_KEY", "RECEIVER_EMAIL"]
+missing_vars = [var for var in required_vars if not os.environ.get(var)]
+if missing_vars:
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -144,7 +155,42 @@ def send_help(message):
         "📝 Send feedback using /feedback"
     )
     bot.reply_to(message, help_text)
+# Add this handler somewhere with your other handlers
+       if call.data.startswith('aqi:'):
+            city = call.data.split(':')[1]
+            # Implement actual AQI lookup
+            aqi_data = get_aqi_data(city)  # You'll need to implement this function
+            if aqi_data:
+                bot.send_message(call.message.chat.id, f"💨 Air Quality in {city}:\n{AQI_LEVELS.get(aqi_data, 'Unknown')}")
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch AQI data")
+                
+        elif call.data.startswith('forecast:'):
+            city = call.data.split(':')[1]
+            # Implement actual forecast lookup
+            forecast_data = get_forecast_data(city)  # You'll need to implement this function
+            if forecast_data:
+                bot.send_message(call.message.chat.id, f"⏱️ 24h Forecast for {city}:\n{forecast_data}")
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Couldn't fetch forecast")
+                
+    except Exception as e:
+        logging.error(f"Callback query error: {str(e)}")
+        bot.answer_callback_query(call.id, "⚠️ Error processing request")
 
+# Change the webhook route to use a more secure path
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-path")
+
+@app.route(f'/{WEBHOOK_SECRET}', methods=["POST"])
+@limiter.limit("10 per minute")
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return 'Bad request', 400
+    
 @bot.message_handler(commands=['about'])
 def send_about(message):
     """Handle /about command"""
@@ -248,31 +294,37 @@ def get_weather_by_coords(lat, lon):
 def home():
     return Response("Bujji Weather Bot is running! 😎", mimetype="text/plain")
 
-@app.route(f'/{BOT_TOKEN}', methods=["POST"])
-@limiter.limit("10 per minute")
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "ok", 200
-
 @app.route('/health')
 def health_check():
-    return {"status": "healthy"}, 200
+    return {"status": "healthy", "bot": "online"}, 200
 
 if __name__ == "__main__":
+    from waitress import serve
+    
     try:
-        # Verify token first
-        bot.get_me()  # This will raise an exception if token is invalid
+        # Verify token
+        bot_info = bot.get_me()
+        logging.info(f"Starting bot: @{bot_info.username}")
         
-        # Set webhook
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
+        # Configure webhook - use WEBHOOK_SECRET consistently
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{WEBHOOK_SECRET}"
+        
+        logging.info("Configuring webhook...")
         bot.remove_webhook()
-        time.sleep(1)
+        time.sleep(2)
         bot.set_webhook(url=webhook_url)
         
-        # Start Flask
-        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+        # Start server
+        port = int(os.environ.get("PORT", 5000))
+        logging.info(f"Server starting on port {port}")
+        serve(
+            app,
+            host="0.0.0.0",
+            port=port,
+            threads=4,
+            ident="BujjiWeatherBot"
+        )
         
     except Exception as e:
-        logging.error(f"Failed to start bot: {str(e)}")
+        logging.critical(f"Fatal error: {str(e)}")
         raise
