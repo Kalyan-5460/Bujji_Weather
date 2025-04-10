@@ -7,13 +7,12 @@ import os
 import re
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_caching import Cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import smtplib
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from datetime import timedelta
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -43,10 +42,10 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bujji-weather.onrender.com")
 
-
 # User activity tracking
 user_last_activity = {}
 INACTIVITY_LIMIT = timedelta(days=1)  # 24 hours
+
 # Initialize Telegram bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -66,7 +65,8 @@ AQI_LEVELS = {
 }
 
 CITY_MAPPING = {
-    "duvvada": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
+    "duvvada": "Visakhapatnam", "vizag": "Visakhapatnam", "vignan": "Visakhapatnam",
+    "viit": "Visakhapatnam", "gajuwaka": "Visakhapatnam", "anakapalli": "Visakhapatnam",
     "mvp colony": "Visakhapatnam", "madhurawada": "Visakhapatnam", "rajahmundry": "Rajahmundry",
     "kakinada": "Kakinada", "vizianagaram": "Vizianagaram", "tirupati": "Tirupati",
     "guntur": "Guntur", "vijayawada": "Vijayawada", "tenali": "Guntur", "ongole": "Ongole",
@@ -81,10 +81,10 @@ CITY_MAPPING = {
     "mahabubnagar": "Mahbubnagar"
 }
 
-
 # Utility functions
 def validate_city(city):
     return bool(re.match(r'^[a-zA-Z\s\-]+$', city))
+
 def check_user_activity(user_id):
     """Check if user is active or needs to see start message"""
     now = datetime.now()
@@ -96,6 +96,7 @@ def check_user_activity(user_id):
         return False  # Needs to see start message
     user_last_activity[user_id] = now
     return True  # Is active user
+
 def get_funny_tip(temp_c):
     if temp_c > 35: return "🥵 It's boiling! Stay hydrated!"
     elif temp_c > 28: return "😎 Perfect for shades and chilled drinks"
@@ -308,9 +309,9 @@ def handle_location(message):
     
     # Send weather report with buttons
     bot.send_message(message.chat.id, format_weather(weather_data), reply_markup=markup)
+
 @bot.message_handler(func=lambda message: True)
 def handle_unrecognized(message):
-    user_last_activity[message.from_user.id] = datetime.now()
     user_id = message.from_user.id
     
     if not check_user_activity(user_id):
@@ -320,12 +321,14 @@ def handle_unrecognized(message):
         # Active user gets city not found style message
         bot.reply_to(message, "📍 Please send me a city name or your location to get weather info\n\n"
                       "Type /help if you need assistance")
-        
+
 # Callback handlers for inline buttons
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
-    user_last_activity[message.from_user.id] = datetime.now()
     try:
+        # Update user activity from callback
+        user_last_activity[call.from_user.id] = datetime.now()
+        
         if call.data.startswith('aqi:'):
             city = call.data.split(':')[1]
             weather_data = get_weather_data(city)
