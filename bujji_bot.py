@@ -260,7 +260,19 @@ def health_check():
     return {"status": "healthy"}, 200
 
 if __name__ == "__main__":
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    try:
+        # Verify token first
+        bot.get_me()  # This will raise an exception if token is invalid
+        
+        # Set webhook
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=webhook_url)
+        
+        # Start Flask
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+        
+    except Exception as e:
+        logging.error(f"Failed to start bot: {str(e)}")
+        raise
