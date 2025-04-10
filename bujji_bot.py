@@ -13,12 +13,17 @@ import os
 import logging
 
 app = Flask(__name__)
+from flask import Response
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
-    if request.method == "HEAD":
-        return "", 200  # respond with headers only
-    return "Welcome to Bujji Weather Bot! ☀️🌧️❄️", 200
+    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
+
+@app.route("/", methods=["GET", "HEAD"])
+def home():
+    return Response("Bujji Weather Bot is active and running! 😎", content_type="text/plain; charset=utf-8")
+
+
 @app.route('/webhook', methods=["POST"])
 def webhook():
     update = request.get_json()
